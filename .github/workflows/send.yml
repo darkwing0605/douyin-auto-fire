@@ -23,16 +23,12 @@ jobs:
     permissions:
       contents: read
     env:
-      DOUYIN_COOKIE: ${{ secrets.DOUYIN_COOKIE }}
-      DOUYIN_CONFIG: ${{ secrets.DOUYIN_CONFIG }}
-      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
-      DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
-      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-      WEBHOOK_HEADERS: ${{ secrets.WEBHOOK_HEADERS }}
-      WEBHOOK_TEMPLATE: ${{ secrets.WEBHOOK_TEMPLATE }}
       HEADLESS: "true"
+      TRACE: "false"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -40,7 +36,14 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - name: Write protected configuration
         shell: bash
-        run: printf '%s' "$DOUYIN_CONFIG" > config.json
+        env:
+          DOUYIN_CONFIG: ${{ secrets.DOUYIN_CONFIG }}
+        run: |
+          if [[ -n "$DOUYIN_CONFIG" ]]; then
+            umask 077
+            printf '%s' "$DOUYIN_CONFIG" > config.json
+            chmod 600 config.json
+          fi
       - name: Write multi-account configuration
         shell: bash
         env:
@@ -57,6 +60,7 @@ jobs:
           LEGACY_COOKIE: ${{ secrets.DOUYIN_COOKIE }}
           LEGACY_CONFIG: ${{ secrets.DOUYIN_CONFIG }}
         run: |
+          umask 077
           mkdir -p config/tasks
           python - <<'PY'
           import json
@@ -111,16 +115,16 @@ jobs:
           PY
       - name: Run
         shell: bash
+        env:
+          DOUYIN_COOKIE: ${{ secrets.DOUYIN_COOKIE }}
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_HEADERS: ${{ secrets.WEBHOOK_HEADERS }}
+          WEBHOOK_TEMPLATE: ${{ secrets.WEBHOOK_TEMPLATE }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.dry_run }}" == "true" ]]; then
             python run.py --dry-run
           else
             python run.py
           fi
-      - name: Upload diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: douyin-failure-${{ github.run_id }}
-          path: artifacts/
-          retention-days: 3
